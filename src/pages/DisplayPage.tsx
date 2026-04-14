@@ -1,77 +1,79 @@
-import { useState } from 'react';
+import React, { useState, useEffect } from 'react';
+import { FontAwesomeIcon } from '@fortawesome/react-fontawesome';
+import { 
+  faClock,
+  faCheck,
+  faExclamationTriangle
+} from '@fortawesome/free-solid-svg-icons';
+import { useWebSocket } from '../hooks/useWebSocket';
 import { Order } from '../types';
-import { useWebSocket } from '../useWebSocket';
+import { Badge } from '../components/ui/Badge';
 
-const PASSWORD = 'SchKosk142026#';
-
-export function DisplayPage() {
-  const [authenticated, setAuthenticated] = useState(false);
-  const [password, setPassword] = useState('');
+export const DisplayPage: React.FC = () => {
   const [orders, setOrders] = useState<Order[]>([]);
-  const [orderingEnabled, setOrderingEnabled] = useState(true);
+  const [acceptingOrders, setAcceptingOrders] = useState(true);
+  const { socket, connected } = useWebSocket();
 
-  useWebSocket((data) => {
-    if (data.type === 'init') {
-      setOrders(data.orders || []);
-      setOrderingEnabled(data.orderingEnabled ?? true);
-    } else if (data.type === 'new_order' && data.order) {
-      setOrders(prev => [...prev, data.order!]);
-    } else if (data.type === 'order_updated' && data.order) {
-      setOrders(prev => prev.map(o => o.id === data.order!.id ? data.order! : o));
-    } else if (data.type === 'order_deleted' && data.orderId) {
-      setOrders(prev => prev.filter(o => o.id !== data.orderId));
-    } else if (data.type === 'ordering_status_updated') {
-      setOrderingEnabled(data.orderingEnabled ?? true);
-    }
-  });
+  useEffect(() => {
+    if (!socket) return;
 
-  function handleLogin(e: React.FormEvent) {
-    e.preventDefault();
-    if (password === PASSWORD) {
-      setAuthenticated(true);
-    } else {
-      alert('Falsches Passwort!');
-      setPassword('');
-    }
-  }
+    const loadOrders = async () => {
+      try {
+        const response = await fetch('/api/orders');
+        const data = await response.json();
+        setOrders(data);
+      } catch (error) {
+        console.error('Failed to load orders:', error);
+      }
+    };
 
-  if (!authenticated) {
+    const loadStatus = async () => {
+      try {
+        const response = await fetch('/api/status');
+        const data = await response.json();
+        setAcceptingOrders(data.acceptingOrders);
+      } catch (error) {
+        console.error('Failed to load status:', error);
+      }
+    };
+
+    loadOrders();
+    loadStatus();
+
+    socket.on('orderUpdate', loadOrders);
+    socket.on('newOrder', loadOrders);
+    socket.on('statusUpdate', (data: { acceptingOrders: boolean }) => {
+      setAcceptingOrders(data.acceptingOrders);
+    });
+
+    return () => {
+      socket.off('orderUpdate', loadOrders);
+      socket.off('newOrder', loadOrders);
+      socket.off('statusUpdate');
+    };
+  }, [socket]);
+
+  const preparingOrders = orders
+    .filter(o => o.status === 'preparing')
+    .sort((a, b) => a.orderNumber - b.orderNumber);
+
+  const readyOrders = orders
+    .filter(o => o.status === 'ready')
+    .sort((a, b) => a.orderNumber - b.orderNumber);
+
+  if (!acceptingOrders) {
     return (
-      <div className="min-h-screen bg-gradient-to-br from-purple-500 to-pink-600 flex items-center justify-center p-4">
-        <div className="bg-white rounded-2xl shadow-2xl p-8 max-w-md w-full">
-          <h1 className="text-3xl font-bold text-gray-800 mb-6 text-center">🔒 Anzeige-Bereich</h1>
-          <form onSubmit={handleLogin}>
-            <input
-              type="password"
-              value={password}
-              onChange={(e) => setPassword(e.target.value)}
-              placeholder="Passwort eingeben"
-              className="w-full px-4 py-3 border-2 border-gray-300 rounded-lg mb-4 text-lg focus:border-purple-500 focus:outline-none"
-              autoFocus
-            />
-            <button
-              type="submit"
-              className="w-full bg-gradient-to-r from-purple-500 to-pink-600 text-white py-3 rounded-lg font-semibold text-lg hover:shadow-lg transition-all"
-            >
-              Anmelden
-            </button>
-          </form>
-        </div>
-      </div>
-    );
-  }
-
-  const preparingOrders = orders.filter(o => o.status === 'preparing');
-  const readyOrders = orders.filter(o => o.status === 'ready');
-
-  if (!orderingEnabled) {
-    return (
-      <div className="min-h-screen bg-gradient-to-br from-red-500 to-orange-600 flex items-center justify-center p-8">
-        <div className="text-center">
-          <div className="text-9xl mb-8">⛔</div>
-          <h1 className="text-6xl font-bold text-white mb-6">Bestellungen geschlossen</h1>
-          <p className="text-3xl text-white">
-            Wir nehmen derzeit keine Bestellungen mehr an
+      <div className="min-h-screen bg-gray-50 flex items-center justify-center p-8">
+        <div className="text-center max-w-2xl">
+          <FontAwesomeIcon 
+            icon={faExclamationTriangle} 
+            className="text-amber-500 text-8xl mb-6" 
+          />
+          <h1 className="text-5xl font-bold text-gray-900 mb-4">
+            Bestellungen pausiert
+          </h1>
+          <p className="text-2xl text-gray-600">
+            Wir nehmen momentan keine Bestellungen mehr an.
           </p>
         </div>
       </div>
@@ -79,72 +81,95 @@ export function DisplayPage() {
   }
 
   return (
-    <div className="min-h-screen bg-gradient-to-br from-blue-600 to-purple-700 p-8">
-      <div className="max-w-7xl mx-auto">
-        <h1 className="text-6xl font-bold text-white text-center mb-12">
-          🍴 Schulkiosk BBS2 Celle
-        </h1>
-
-        <div className="grid grid-cols-1 lg:grid-cols-2 gap-8">
-          {/* Wird vorbereitet */}
-          <div className="bg-white/95 backdrop-blur rounded-3xl shadow-2xl p-8">
-            <div className="flex items-center justify-center gap-4 mb-8">
-              <span className="text-5xl">⏳</span>
-              <h2 className="text-4xl font-bold text-gray-800">Wird vorbereitet</h2>
+    <div className="min-h-screen bg-gray-50">
+      {/* Header */}
+      <div className="bg-white border-b border-gray-200">
+        <div className="max-w-7xl mx-auto px-8 py-6">
+          <div className="flex items-center justify-between">
+            <h1 className="text-3xl font-bold text-gray-900">
+              BBS2 Celle Schulkiosk
+            </h1>
+            <div className="text-right">
+              {connected ? (
+                <Badge variant="success" size="lg">Verbunden</Badge>
+              ) : (
+                <Badge variant="danger" size="lg">Getrennt</Badge>
+              )}
             </div>
-            <div className="grid grid-cols-3 sm:grid-cols-4 md:grid-cols-5 gap-4">
+          </div>
+        </div>
+      </div>
+
+      <div className="max-w-7xl mx-auto px-8 py-8">
+        <div className="grid grid-cols-2 gap-8">
+          {/* Preparing Column */}
+          <div>
+            <div className="flex items-center gap-3 mb-6">
+              <FontAwesomeIcon icon={faClock} className="text-amber-600 text-2xl" />
+              <h2 className="text-2xl font-bold text-gray-900">
+                Wird vorbereitet
+              </h2>
+            </div>
+            <div className="grid grid-cols-2 gap-4">
               {preparingOrders.length === 0 ? (
-                <div className="col-span-full text-center text-gray-500 text-2xl py-12">
-                  Keine Bestellungen
+                <div className="col-span-2 bg-white rounded-xl p-8 text-center">
+                  <p className="text-gray-400 text-lg">Keine Bestellungen</p>
                 </div>
               ) : (
                 preparingOrders.map(order => (
                   <div
                     key={order.id}
-                    className="bg-gradient-to-br from-orange-400 to-red-500 rounded-2xl shadow-lg flex items-center justify-center aspect-square transform hover:scale-105 transition-transform"
+                    className="bg-white rounded-xl p-6 shadow-md border-2 border-amber-200"
                   >
-                    <span className="text-5xl font-bold text-white">
-                      {order.number}
-                    </span>
+                    <div className="text-center">
+                      <div className="text-6xl font-bold text-amber-600 mb-2">
+                        #{order.orderNumber}
+                      </div>
+                      <div className="text-sm text-gray-500 font-medium">
+                        {order.items.filter(i => i.ready).length} / {order.items.length} fertig
+                      </div>
+                    </div>
                   </div>
                 ))
               )}
             </div>
           </div>
 
-          {/* Abholbereit */}
-          <div className="bg-white/95 backdrop-blur rounded-3xl shadow-2xl p-8">
-            <div className="flex items-center justify-center gap-4 mb-8">
-              <span className="text-5xl">✅</span>
-              <h2 className="text-4xl font-bold text-gray-800">Abholbereit</h2>
+          {/* Ready Column */}
+          <div>
+            <div className="flex items-center gap-3 mb-6">
+              <FontAwesomeIcon icon={faCheck} className="text-emerald-600 text-2xl" />
+              <h2 className="text-2xl font-bold text-gray-900">
+                Abholbereit
+              </h2>
             </div>
-            <div className="grid grid-cols-3 sm:grid-cols-4 md:grid-cols-5 gap-4">
+            <div className="grid grid-cols-2 gap-4">
               {readyOrders.length === 0 ? (
-                <div className="col-span-full text-center text-gray-500 text-2xl py-12">
-                  Keine Bestellungen
+                <div className="col-span-2 bg-white rounded-xl p-8 text-center">
+                  <p className="text-gray-400 text-lg">Keine Bestellungen</p>
                 </div>
               ) : (
                 readyOrders.map(order => (
                   <div
                     key={order.id}
-                    className="bg-gradient-to-br from-green-400 to-emerald-500 rounded-2xl shadow-lg flex items-center justify-center aspect-square animate-pulse transform hover:scale-105 transition-transform"
+                    className="bg-white rounded-xl p-6 shadow-md border-2 border-emerald-200 animate-pulse"
                   >
-                    <span className="text-5xl font-bold text-white">
-                      {order.number}
-                    </span>
+                    <div className="text-center">
+                      <div className="text-6xl font-bold text-emerald-600 mb-2">
+                        #{order.orderNumber}
+                      </div>
+                      <div className="inline-flex items-center gap-2 px-3 py-1 bg-emerald-100 rounded-full">
+                        <FontAwesomeIcon icon={faCheck} className="text-emerald-600 text-sm" />
+                        <span className="text-sm text-emerald-800 font-medium">Bereit</span>
+                      </div>
+                    </div>
                   </div>
                 ))
               )}
             </div>
           </div>
         </div>
-
-        <div className="mt-8 text-center">
-          <p className="text-white text-2xl font-semibold">
-            Bitte achten Sie auf Ihre Nummer! · Bezahlung bei Abholung
-          </p>
-        </div>
       </div>
     </div>
   );
-}
+};

@@ -1,23 +1,32 @@
 export interface MenuItem {
-  id: string;
+  id: number;
   name: string;
   price: number;
   category: string;
+  available: boolean;
 }
 
-export interface OrderItem extends MenuItem {
+export interface OrderItem {
+  menuItemId: number;
+  name: string;
+  price: number;
   quantity: number;
   ready?: boolean;
 }
 
 export interface Order {
   id: number;
-  number: number;
+  orderNumber: number;
   items: OrderItem[];
+  totalPrice: number;
   status: 'preparing' | 'ready';
-  timestamp: string;
+  createdAt: string;
 }
 
 export interface CartItem extends MenuItem {
   quantity: number;
+}
+
+export interface OrderStatusResponse {
+  acceptingOrders: boolean;
 }

@@ -1,152 +1,157 @@
-# Schulkiosk BBS2 Celle
+# BBS2 Celle Schulkiosk System
 
-Ein vollständiges Bestellsystem für den Schulkiosk der BBS2 Celle.
+Ein vollständiges Bestellsystem für den Schulkiosk der BBS2 Celle mit Echtzeit-Updates über WebSocket.
 
 ## Features
 
-- **Kunden-Frontend** (`/` oder `/order`): Mobil-optimiert für Schülerbestellungen
-- **Koch-Frontend** (`/kitchen`): Tablet/Laptop-optimiert für die Küche
-- **Anzeige-Display** (`/display`): Großbildschirm für Bestellstatus
+- **Kunden-Frontend** (mobil-optimiert): Bestellungen aufgeben via QR-Code
+- **Koch-Frontend** (Tablet/Laptop): Bestellungen verwalten und als fertig markieren
+- **Kassen-Frontend**: Abholbereite Bestellungen mit Preisen
+- **Anzeige-Display**: Bestellstatus für Kunden (vorbereitet/abholbereit)
+- **Echtzeit-Updates**: Alle Clients werden live über WebSocket synchronisiert
+- **Passwortschutz**: Koch-, Kassen- und Anzeige-Seiten geschützt
 
-## Produktsortiment
+## Passwort
+
+Alle geschützten Bereiche (Küche, Kasse): `SchKosk142026#`
+
+## URLs
+
+- **Kundenbestellungen**: `https://kiosk.swnetworks.de/order`
+- **Küche**: `https://kiosk.swnetworks.de/kitchen`
+- **Kasse**: `https://kiosk.swnetworks.de/cashier`
+- **Anzeige**: `https://kiosk.swnetworks.de/display`
+
+## Sortiment
 
 ### Chicken Nuggets
-- 5 Stück: 3,00 €
-- 9 Stück: 5,00 €
-- 12 Stück: 6,00 €
+- 5 Stück: 3,00€
+- 9 Stück: 5,00€
+- 12 Stück: 6,00€
 
-### Crêpes
-- Plain: 2,00 €
-- Puderzucker: 2,00 €
-- Nutella: 2,50 €
+### Crepes
+- Plain: 2,00€
+- Puderzucker: 2,00€
+- Nutella: 2,50€
 
 ### Waffeln
-- Plain: 2,00 €
-- Puderzucker: 2,00 €
-- Nutella: 2,50 €
+- Plain: 2,00€
+- Puderzucker: 2,00€
+- Nutella: 2,50€
 
 ## Installation auf Debian 12 Server
 
-### Voraussetzungen
+Siehe [INSTALL.md](./INSTALL.md) für detaillierte Installationsanweisungen.
+
+### Kurzversion
 
 ```bash
-# Node.js installieren (als root)
+# Abhängigkeiten installieren
 curl -fsSL https://deb.nodesource.com/setup_20.x | bash -
-apt-get install -y nodejs
+apt-get install -y nodejs nginx
 
-# Projekt hochladen
-# (z.B. via git clone oder scp)
-```
-
-### Installation
-
-```bash
-# In das Projektverzeichnis wechseln
-cd /pfad/zum/projekt
+# Projekt klonen
+cd /var/www
+git clone <repository-url> kiosk
+cd kiosk
 
 # Abhängigkeiten installieren
 npm install
 
-# Frontend bauen
+# Build erstellen
+npm run build
+
+# Server starten
+npm start
+```
+
+## Entwicklung
+
+```bash
+# Abhängigkeiten installieren
+npm install
+
+# Frontend-Dev-Server (Port 5173)
+npm run dev
+
+# Backend-Server (Port 3000)
+npm start
+
+# Build für Produktion
 npm run build
 ```
 
-### Server starten
-
-**Manuell:**
-```bash
-node server.js
-```
-
-**Mit Start-Skript:**
-```bash
-chmod +x start-server.sh
-./start-server.sh
-```
-
-### Als Systemd Service (empfohlen)
-
-Erstelle `/etc/systemd/system/schulkiosk.service`:
-
-```ini
-[Unit]
-Description=Schulkiosk BBS2 Celle
-After=network.target
-
-[Service]
-Type=simple
-User=root
-WorkingDirectory=/pfad/zum/projekt
-ExecStart=/usr/bin/node /pfad/zum/projekt/server.js
-Restart=always
-Environment=NODE_ENV=production
-Environment=PORT=3000
-
-[Install]
-WantedBy=multi-user.target
-```
-
-Dann:
-```bash
-systemctl daemon-reload
-systemctl enable schulkiosk
-systemctl start schulkiosk
-systemctl status schulkiosk
-```
-
-### Nginx Reverse Proxy (optional)
-
-Wenn Sie die App auf Port 80/443 verfügbar machen möchten:
-
-```nginx
-server {
-    listen 80;
-    server_name kiosk.swnetworks.de;
-
-    location / {
-        proxy_pass http://localhost:3000;
-        proxy_http_version 1.1;
-        proxy_set_header Upgrade $http_upgrade;
-        proxy_set_header Connection 'upgrade';
-        proxy_set_header Host $host;
-        proxy_cache_bypass $http_upgrade;
-        proxy_set_header X-Real-IP $remote_addr;
-        proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
-    }
-}
-```
-
-## Verwendung
-
-### Kunden-Seite (/)
-1. QR-Code scannen oder `kiosk.swnetworks.de/order` aufrufen
-2. Produkte in den Warenkorb legen
-3. Bestellung aufgeben
-4. Bestellnummer merken
-5. Bei Abholung bezahlen
-
-### Koch-Seite (/kitchen)
-- **Passwort:** `SchKosk142026#`
-- Bestellungen werden live angezeigt
-- Einzelne Produkte als fertig markieren
-- Produkte als ausverkauft markieren
-- Bestellungen löschen (falls nötig)
-- Bestell-Stopp aktivieren/deaktivieren
-
-### Anzeige-Seite (/display)
-- **Passwort:** `SchKosk142026#`
-- Zeigt zwei Spalten:
-  - "Wird vorbereitet" (orange)
-  - "Abholbereit" (grün, pulsierend)
-- Aktualisiert sich automatisch in Echtzeit
-
 ## Technologie-Stack
 
-- **Frontend:** React + TypeScript + Tailwind CSS
-- **Backend:** Node.js + Express
-- **Echtzeit:** WebSocket (ws)
-- **Build:** Vite
+### Frontend
+- React 18
+- TypeScript
+- Tailwind CSS
+- Font Awesome Icons
+- Socket.IO Client
+- React Router
+
+### Backend
+- Node.js
+- Express
+- Socket.IO
+- In-Memory Datenspeicherung
+
+## Funktionen
+
+### Kunden-Frontend
+- Menü durchsuchen
+- Artikel zum Warenkorb hinzufügen
+- Bestellungen aufgeben
+- Bestellnummer erhalten
+- Responsive Design für Smartphones
+
+### Koch-Frontend
+- Alle offenen Bestellungen sehen
+- Einzelne Artikel als fertig markieren
+- Automatische Statusänderung zu "abholbereit"
+- Artikel als ausverkauft markieren
+- Bestellungen löschen
+- Bestellstopp aktivieren/deaktivieren
+- Optimiert für Tablet/Laptop
+
+### Kassen-Frontend
+- Abholbereite Bestellungen mit Preisen
+- Bestellnummer und Artikelliste
+- Bestellungen als bezahlt markieren (löschen)
+- Übersichtliche Tabellenansicht
+
+### Anzeige-Display
+- Zwei Spalten: "Wird vorbereitet" und "Abholbereit"
+- Große, gut lesbare Nummern
+- Automatische Echtzeit-Updates
+- Optimiert für große Bildschirme
+
+## Systemd Service
+
+Der Service wird automatisch mit dem System gestartet:
+
+```bash
+# Status prüfen
+systemctl status kiosk
+
+# Neustart
+systemctl restart kiosk
+
+# Logs anzeigen
+journalctl -u kiosk -f
+```
+
+## Nginx-Konfiguration
+
+Der Nginx-Reverse-Proxy leitet alle Anfragen an den Node.js-Server weiter und unterstützt WebSocket-Verbindungen.
+
+## Sicherheit
+
+- Passwortschutz für geschützte Bereiche
+- HTTPS über Nginx (Let's Encrypt empfohlen)
+- Keine sensiblen Daten in der Datenbank
 
 ## Support
 
-Bei Fragen oder Problemen wenden Sie sich an den IT-Support der BBS2 Celle.
+Bei Problemen oder Fragen, siehe [INSTALL.md](./INSTALL.md) für Troubleshooting.

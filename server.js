@@ -1,7 +1,6 @@
 import express from 'express';
-import { WebSocketServer } from 'ws';
-import cors from 'cors';
 import { createServer } from 'http';
+import { Server } from 'socket.io';
 import { fileURLToPath } from 'url';
 import { dirname, join } from 'path';
 
@@ -10,173 +9,177 @@ const __dirname = dirname(__filename);
 
 const app = express();
 const server = createServer(app);
-const wss = new WebSocketServer({ server });
+const io = new Server(server, {
+  cors: {
+    origin: '*',
+    methods: ['GET', 'POST']
+  }
+});
 
-app.use(cors());
 app.use(express.json());
 app.use(express.static(join(__dirname, 'dist')));
 
 // State
 let orders = [];
 let orderCounter = 1;
-let unavailableItems = [];
-let orderingEnabled = true;
+let acceptingOrders = true;
 
 // Menu
 const menu = [
-  { id: 'nuggets-5', name: 'Chicken Nuggets 5 Stück', price: 3.00, category: 'nuggets' },
-  { id: 'nuggets-9', name: 'Chicken Nuggets 9 Stück', price: 5.00, category: 'nuggets' },
-  { id: 'nuggets-12', name: 'Chicken Nuggets 12 Stück', price: 6.00, category: 'nuggets' },
-  { id: 'crepe-plain', name: 'Crepe Plain', price: 2.00, category: 'crepes' },
-  { id: 'crepe-sugar', name: 'Crepe Puderzucker', price: 2.00, category: 'crepes' },
-  { id: 'crepe-nutella', name: 'Crepe Nutella', price: 2.50, category: 'crepes' },
-  { id: 'waffle-plain', name: 'Waffel Plain', price: 2.00, category: 'waffles' },
-  { id: 'waffle-sugar', name: 'Waffel Puderzucker', price: 2.00, category: 'waffles' },
-  { id: 'waffle-nutella', name: 'Waffel Nutella', price: 2.50, category: 'waffles' },
+  { id: 1, name: 'Chicken Nuggets 5 Stück', price: 3.00, category: 'Chicken Nuggets', available: true },
+  { id: 2, name: 'Chicken Nuggets 9 Stück', price: 5.00, category: 'Chicken Nuggets', available: true },
+  { id: 3, name: 'Chicken Nuggets 12 Stück', price: 6.00, category: 'Chicken Nuggets', available: true },
+  { id: 4, name: 'Crepe Plain', price: 2.00, category: 'Crepes', available: true },
+  { id: 5, name: 'Crepe Puderzucker', price: 2.00, category: 'Crepes', available: true },
+  { id: 6, name: 'Crepe Nutella', price: 2.50, category: 'Crepes', available: true },
+  { id: 7, name: 'Waffel Plain', price: 2.00, category: 'Waffeln', available: true },
+  { id: 8, name: 'Waffel Puderzucker', price: 2.00, category: 'Waffeln', available: true },
+  { id: 9, name: 'Waffel Nutella', price: 2.50, category: 'Waffeln', available: true },
 ];
 
-// Broadcast to all connected clients
-function broadcast(data) {
-  wss.clients.forEach(client => {
-    if (client.readyState === 1) { // OPEN
-      client.send(JSON.stringify(data));
-    }
+// Socket.IO
+io.on('connection', (socket) => {
+  console.log('Client connected:', socket.id);
+
+  socket.on('disconnect', () => {
+    console.log('Client disconnected:', socket.id);
   });
+});
+
+// Helper function to broadcast updates
+function broadcastOrderUpdate() {
+  io.emit('orderUpdate', orders);
 }
 
-// WebSocket connection
-wss.on('connection', (ws) => {
-  console.log('Client connected');
-  
-  // Send initial state
-  ws.send(JSON.stringify({
-    type: 'init',
-    orders,
-    unavailableItems,
-    orderingEnabled
-  }));
+function broadcastNewOrder(order) {
+  io.emit('newOrder', order);
+}
 
-  ws.on('close', () => {
-    console.log('Client disconnected');
-  });
-});
+function broadcastMenuUpdate() {
+  io.emit('menuUpdate', menu);
+}
+
+function broadcastStatusUpdate() {
+  io.emit('statusUpdate', { acceptingOrders });
+}
 
 // API Routes
+
+// Get menu
 app.get('/api/menu', (req, res) => {
-  res.json({ menu, unavailableItems, orderingEnabled });
+  res.json(menu);
 });
 
+// Get all orders
+app.get('/api/orders', (req, res) => {
+  res.json(orders);
+});
+
+// Get order status
+app.get('/api/status', (req, res) => {
+  res.json({ acceptingOrders });
+});
+
+// Create new order
 app.post('/api/orders', (req, res) => {
-  if (!orderingEnabled) {
+  if (!acceptingOrders) {
     return res.status(403).json({ error: 'Bestellungen sind derzeit nicht möglich' });
   }
 
   const { items } = req.body;
-  
+
   if (!items || items.length === 0) {
     return res.status(400).json({ error: 'Warenkorb ist leer' });
   }
 
   const orderNumber = orderCounter++;
+  const totalPrice = items.reduce((sum, item) => sum + item.price * item.quantity, 0);
+
   const order = {
     id: Date.now(),
-    number: orderNumber,
+    orderNumber,
     items: items.map(item => ({
-      ...item,
+      menuItemId: item.menuItemId,
+      name: item.name,
+      price: item.price,
+      quantity: item.quantity,
       ready: false
     })),
-    status: 'preparing', // preparing, ready
-    timestamp: new Date().toISOString()
+    totalPrice,
+    status: 'preparing',
+    createdAt: new Date().toISOString()
   };
 
   orders.push(order);
+  broadcastNewOrder(order);
 
-  broadcast({
-    type: 'new_order',
-    order
-  });
-
-  res.json({ orderNumber, orderId: order.id });
+  res.json(order);
 });
 
-app.post('/api/orders/:orderId/items/:itemIndex/ready', (req, res) => {
-  const { orderId, itemIndex } = req.params;
-  const order = orders.find(o => o.id === parseInt(orderId));
-  
+// Toggle item ready status
+app.post('/api/orders/:orderId/items/:itemIndex/toggle', (req, res) => {
+  const orderId = parseInt(req.params.orderId);
+  const itemIndex = parseInt(req.params.itemIndex);
+
+  const order = orders.find(o => o.id === orderId);
   if (!order) {
     return res.status(404).json({ error: 'Bestellung nicht gefunden' });
   }
 
-  const index = parseInt(itemIndex);
-  if (index >= 0 && index < order.items.length) {
-    order.items[index].ready = true;
-    
-    // Check if all items are ready
-    const allReady = order.items.every(item => item.ready);
-    if (allReady) {
-      order.status = 'ready';
-    }
-
-    broadcast({
-      type: 'order_updated',
-      order
-    });
-
-    res.json({ success: true, order });
-  } else {
-    res.status(400).json({ error: 'Ungültiger Item-Index' });
+  if (itemIndex < 0 || itemIndex >= order.items.length) {
+    return res.status(400).json({ error: 'Ungültiger Item-Index' });
   }
+
+  order.items[itemIndex].ready = !order.items[itemIndex].ready;
+
+  // Check if all items are ready
+  const allReady = order.items.every(item => item.ready);
+  if (allReady) {
+    order.status = 'ready';
+  } else {
+    order.status = 'preparing';
+  }
+
+  broadcastOrderUpdate();
+  res.json(order);
 });
 
+// Delete order
 app.delete('/api/orders/:orderId', (req, res) => {
-  const { orderId } = req.params;
-  const index = orders.findIndex(o => o.id === parseInt(orderId));
-  
-  if (index !== -1) {
-    orders.splice(index, 1);
-    
-    broadcast({
-      type: 'order_deleted',
-      orderId: parseInt(orderId)
-    });
+  const orderId = parseInt(req.params.orderId);
+  const index = orders.findIndex(o => o.id === orderId);
 
-    res.json({ success: true });
-  } else {
-    res.status(404).json({ error: 'Bestellung nicht gefunden' });
-  }
-});
-
-app.post('/api/items/:itemId/unavailable', (req, res) => {
-  const { itemId } = req.params;
-  const { unavailable } = req.body;
-
-  if (unavailable && !unavailableItems.includes(itemId)) {
-    unavailableItems.push(itemId);
-  } else if (!unavailable) {
-    unavailableItems = unavailableItems.filter(id => id !== itemId);
+  if (index === -1) {
+    return res.status(404).json({ error: 'Bestellung nicht gefunden' });
   }
 
-  broadcast({
-    type: 'unavailable_items_updated',
-    unavailableItems
-  });
-
-  res.json({ success: true, unavailableItems });
+  orders.splice(index, 1);
+  broadcastOrderUpdate();
+  res.json({ success: true });
 });
 
-app.post('/api/ordering-status', (req, res) => {
-  const { enabled } = req.body;
-  orderingEnabled = enabled;
+// Toggle menu item availability
+app.post('/api/menu/:itemId/toggle', (req, res) => {
+  const itemId = parseInt(req.params.itemId);
+  const item = menu.find(m => m.id === itemId);
 
-  broadcast({
-    type: 'ordering_status_updated',
-    orderingEnabled
-  });
+  if (!item) {
+    return res.status(404).json({ error: 'Menü-Item nicht gefunden' });
+  }
 
-  res.json({ success: true, orderingEnabled });
+  item.available = !item.available;
+  broadcastMenuUpdate();
+  res.json(item);
 });
 
-// Serve React app for all routes
+// Toggle accepting orders
+app.post('/api/status/toggle', (req, res) => {
+  acceptingOrders = !acceptingOrders;
+  broadcastStatusUpdate();
+  res.json({ acceptingOrders });
+});
+
+// Serve React app for all other routes
 app.get('*', (req, res) => {
   res.sendFile(join(__dirname, 'dist', 'index.html'));
 });
