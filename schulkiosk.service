@@ -1,0 +1,21 @@
+[Unit]
+Description=Schulkiosk BBS2 Celle
+After=network.target
+
+[Service]
+Type=simple
+User=root
+WorkingDirectory=/root/schulkiosk
+ExecStart=/usr/bin/node /root/schulkiosk/server.js
+Restart=always
+RestartSec=10
+Environment=NODE_ENV=production
+Environment=PORT=3000
+
+# Logging
+StandardOutput=journal
+StandardError=journal
+SyslogIdentifier=schulkiosk
+
+[Install]
+WantedBy=multi-user.target
